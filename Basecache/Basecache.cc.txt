@@ -1,0 +1,399 @@
+#include "math.h"
+#include <iostream>
+#include "BaseCache.h"
+
+using namespace std;
+
+//WRITE ME
+//Default constructor to set everything to '0'
+BaseCache::BaseCache()
+{
+	cacheSize = 0; 
+	associativity = 0;
+	blockSize = 0;
+
+	tag_Size = 0;
+	offset_Size = 0;
+	index_Size = 0; 
+	
+	//	LRU = new uint32_t[associativity]; 
+	//	for(uint32_t i=0; i<(associativity); i++)
+	//	 {  LRU[i] =0;
+	//	 }
+	
+	
+}
+
+//WRITE ME
+//Constructor to initialize cache parameters, create the cache and clears it
+BaseCache::BaseCache(uint32_t _cacheSize, uint32_t _associativity, uint32_t _blockSize) 
+{
+
+// intializing the parameters 
+cacheSize = _cacheSize;
+associativity = _associativity;
+blockSize = _blockSize; 
+
+initDerivedParams();
+createCache();
+resetStats();
+}
+
+//WRITE ME
+//Set cache base parameters
+void BaseCache::setCacheSize(uint32_t _cacheSize) 
+{
+	cacheSize = _cacheSize;
+}
+void BaseCache::setAssociativity(uint32_t _associativity) 
+{
+	associativity = _associativity;
+}
+void BaseCache::setBlockSize(uint32_t _blockSize) 
+{
+	blockSize = _blockSize;
+}
+
+//WRITE ME
+//Get cache base parameters
+uint32_t BaseCache::getCacheSize() 
+{
+	return cacheSize;
+}
+uint32_t BaseCache::getAssociativity() 
+{
+	return associativity;
+}
+uint32_t BaseCache::getBlockSize() 
+{
+	return blockSize;
+}
+
+//WRITE ME
+//Get cache access statistics
+uint32_t BaseCache::getReadHits() 
+{
+	return numReadHits;
+}
+
+uint32_t BaseCache::getReadMisses() 
+{
+	return numReadMisses;
+}
+
+uint32_t BaseCache::getWriteHits()
+{
+	return numWriteHits;
+}
+
+uint32_t BaseCache::getWriteMisses() 
+{
+	return numWriteMisses;
+}
+
+double BaseCache::getReadHitRate() 
+{
+	double ReadHitRate; 
+	ReadHitRate = double(numReadHits*100/ numReads);
+	return ReadHitRate;
+}
+
+double BaseCache::getReadMissRate() 
+{
+	double ReadMissRate; 
+	ReadMissRate = double( numReadMisses*100/ numReads);
+	return ReadMissRate;
+}
+
+double BaseCache::getWriteHitRate() 
+{
+	double WriteHitRate; 
+	WriteHitRate = double( numWriteHits*100/numWrites);
+	return WriteHitRate;
+}
+
+double BaseCache::getWriteMissRate() 
+{
+	double WriteMissRate; 
+	WriteMissRate = double( numWriteMisses *100/ numWrites);
+       
+	return WriteMissRate; 
+}
+
+// Write here!
+double BaseCache::getOverallHitRate()
+{
+  double OverallHitRate; 
+  OverallHitRate = double((numReadHits + numWriteHits)*100/ (numReads+numWrites));
+  return OverallHitRate;
+}
+
+double BaseCache::getOverallMissRate() 
+{
+  double OverallMissRate; 
+  OverallMissRate = double((numReadMisses + numWriteMisses)*100/(numReads +numWrites));
+  return OverallMissRate;
+}
+
+void BaseCache::decr_readhits()
+{
+  numReadHits--; 
+}
+
+void BaseCache::decr_readmisses()
+{
+  numReadMisses--;
+}
+
+void BaseCache::decr_writehits()
+{
+  numWriteHits--;
+}
+void BaseCache:: decr_writemisses()
+{
+  numWriteMisses--;
+}
+
+void BaseCache:: decr_write()
+{
+  numWrites--;
+}
+
+//WRITE ME
+//Initialize cache derived parameters
+void BaseCache::initDerivedParams() 
+{
+        index_Size =  double (log2((cacheSize)/(blockSize * associativity)));
+	numofwords = blockSize/4; // This is used to create an data array of numofwords size.  
+
+        blockoffset_Size = double (log2(numofwords)); // no. of bits in block offset 
+	tag_Size = 32 - (index_Size + blockoffset_Size)-2;
+	//wordoffset_size= offset_Size -2;  // no. of bits in word offset
+	
+	numofindex = cacheSize/(blockSize*associativity);
+	
+	mask_offset = int ((pow(2.0,blockoffset_Size)-1)); // block offset mask
+	blockoffset_mask = (mask_offset) <<2;// word offset mask has last 2 bits as 0
+	
+	mask_index =int ((pow(2.0,index_Size)-1))<< (int(blockoffset_Size)+2); 
+
+	mask_tag = int((pow(2.0,tag_Size)-1))<< int(blockoffset_Size+index_Size+2); 
+}
+
+//WRITE ME
+//Reset cache access statistics
+void BaseCache::resetStats() 
+{
+// Make all statistical variables zero
+	 numReads =0;
+	 numWrites =0;
+	 numReadHits =0;
+	 numReadMisses =0;
+	 numWriteHits =0;
+	 numWriteMisses =0;
+
+}
+
+//WRITE ME
+//Create cache and clear it
+void BaseCache::createCache() 
+{	
+  uint32_t i,j,k;
+	// Creating an array of pointers of size index_Size
+  cacheLines = new cacheLine*[numofindex];
+
+	// Each pointer in the array of pointers point to (Associativity) number of CacheLine data structures.
+        for(i=0; i < (numofindex); i++)
+	{
+		cacheLines[i] = new cacheLine[associativity];
+	}
+
+	// Data pointer of each structure will point to (blockSize) number of bytes. 
+	for (i=0; i<numofindex; i++)
+	for( j=0; j< associativity; j++)
+	{
+		cacheLines[i][j].data = new uint32_t[numofwords];    
+	}
+	
+	//Clearing Cache Values
+	// Tag value of the data structures are made zero and  clearing the values of the memory pointed by each *data in the structure. 
+	
+	for(i=0; i<numofindex;i++ )
+	for(j=0; j<associativity; j++)
+	  {
+  	cacheLines[i][j].tag = -1;
+	cacheLines[i][j].LRUStackBits =0;
+	for(k=0; k< numofwords; k++)
+	{	
+	
+		cacheLines[i][j].data[k] = 0;
+	}}
+	
+}
+
+//WRITE ME
+//Reset cache
+void BaseCache::clearCache() 
+{
+  uint32_t i,j,k;
+
+	//Clearing Cache Values
+	// Tag value of the data structures are made zero and  clearing the values of the memory pointed by each *data in the structure. 
+	
+	for(i=0; i<numofindex;i++ )
+	for(j=0; j<associativity; j++)
+	for(k=0; k< numofwords; k++)
+	{	
+		cacheLines[i][j].tag = 0;
+		cacheLines[i][j].data[k] = 0;
+		cacheLines[i][j].LRUStackBits = 0; 
+	}
+	
+}
+
+/* Following are the additional methods which I use to extract the offset, index and tag bits*/
+
+uint32_t BaseCache:: extract_wordoffset( uint32_t addr)
+{
+	uint32_t temp_addr; 
+	temp_addr = addr; 
+	temp_addr= temp_addr & blockoffset_mask;
+	temp_addr = temp_addr >>2;
+	return temp_addr;
+}
+
+uint32_t BaseCache:: extract_index(uint32_t addr)
+{
+  uint32_t temp_addr;
+  temp_addr = addr;
+  temp_addr = temp_addr & mask_index; 
+  temp_addr = temp_addr>> int(blockoffset_Size+2);
+  return temp_addr;
+}
+
+uint32_t BaseCache:: extract_tag(uint32_t addr)
+{
+  uint32_t temp_addr; 
+  temp_addr = addr;
+  temp_addr = temp_addr & mask_tag; 
+  temp_addr = temp_addr >> int(blockoffset_Size + index_Size +2);
+  return temp_addr;
+}
+
+//WRITE ME
+//Read data
+//return true if it was a hit, false if it was a miss
+//data is only valid if it was a hit, input data pointer
+//is not updated upon miss. Make sure to update LRU stack
+//bits. You can choose to separate the LRU bits update into
+// a separate function that can be used from both read() and write().
+bool BaseCache::read(uint32_t addr, uint32_t *data) 
+{
+  uint32_t  i;
+  uint32_t temp_address = addr;
+  
+  numReads++;              // Entered the read function
+  wordoffset = extract_wordoffset(temp_address);
+  index = extract_index(temp_address);
+  tag = extract_tag(temp_address);
+
+
+
+  for(i=0;i<(associativity); i++)
+    {
+      if(cacheLines[index][i].tag==tag)
+	{
+	  numReadHits++; 
+	 *data = (cacheLines[index][i].data[wordoffset]);
+	 updateLRU(index, i);
+	 // storeinLRU(temp_address);
+	  return 1; // true 
+	 }
+    } 
+   
+  numReadMisses++;
+  //  storeinLRU(temp_address);
+ 
+  for(i=0; i<associativity; i++)
+    {
+      if(cacheLines[index][i].LRUStackBits==0)
+	{
+	  cacheLines[index][i].tag= tag; 
+	  updateLRU(index, i);
+	  return 0;
+	}
+    }
+ 
+  return 0; // false
+	
+}
+
+//WRITE ME
+//Write data
+//Function returns write hit or miss status. 
+bool BaseCache::write(uint32_t addr, uint32_t data) 
+{	
+  
+  uint32_t check;
+  uint32_t temp_address = addr;
+  uint32_t temp_data = data; 
+  //uint32_t LRU_address;
+
+  numWrites++;  // Entered the write function
+
+  wordoffset = extract_wordoffset(temp_address);
+  index = extract_index(temp_address);
+  tag = extract_tag(temp_address);
+
+
+  for(check=0;check< (associativity); check++)
+    {
+      if(cacheLines[index][check].tag == tag)
+	{
+	  cacheLines[index][check].data[wordoffset] = temp_data;
+	  numWriteHits++;  
+	  updateLRU(index, check);
+	  // storeinLRU(temp_address);   
+	  return 1;  // true
+	}
+    }
+      numWriteMisses++;
+      /*     
+      for(i=0; i< associativity; i++)
+	{
+	  if(cacheLines[index][i].LRUStackBits==0)
+	    {
+	      cacheLines[index][i].tag = tag;
+	      cacheLines[index][i].data[wordoffset] = temp_data;
+	      updateLRU(index, i);
+	      return 0;
+	    }
+	}
+      */
+      return 0;      // false
+}
+
+void BaseCache::updateLRU(uint32_t index, uint32_t associativitynum)
+{
+  uint32_t j; 
+  
+  for(j=0; j< associativity; j++)
+    {
+      if(cacheLines[index][j].LRUStackBits > cacheLines[index][associativitynum].LRUStackBits) 
+	{
+	  cacheLines[index][j].LRUStackBits = (cacheLines[index][associativitynum].LRUStackBits)-1; 
+	}
+    }
+
+	cacheLines[index][associativitynum].LRUStackBits=(associativity -1); 
+}
+
+
+
+//WRITE ME
+//Destructor to free all allocated memeroy.
+//BaseCache::~BaseCache() 
+//{
+
+
+//}

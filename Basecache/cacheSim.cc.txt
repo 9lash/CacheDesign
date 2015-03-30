@@ -1,0 +1,220 @@
+#include <iostream>
+#include <fstream>
+#include <sstream>
+#include <string>
+#include "BaseCache.h"
+using namespace std;
+
+uint32_t memread_count = 0;
+uint32_t memwrite_count = 0;
+
+// The amount of lines present in the memfoot.dat is 262144. Note that the memfoot.dat is the memory address stated line by line. We know each memory address contains 32 bit data i.e. 4 bytes of memory. Thus each memory address advances by 4 unit. 
+
+uint32_t memArray[262144]; // total lines
+
+void mem_read(uint32_t temp_addr, uint32_t *temp_data)
+{
+  
+  uint32_t temp_address = temp_addr; 
+  
+  memread_count++; 
+  *temp_data = memArray[temp_address/4];
+  
+}
+
+void mem_write(uint32_t temp_addr, uint32_t temp_data)
+{
+ 
+  uint32_t temp_address = temp_addr;
+  memwrite_count++; 
+  memArray[temp_address/4] = temp_data; 
+}
+
+
+
+int main(int argc, char **argv)
+ {
+   uint32_t  AMAT;
+   uint32_t max_accesstime, min_accesstime;
+   string inp_line2, parsed_line2; 
+   uint32_t addr_mem, data_mem;
+  
+   fstream fp("memfoot.dat");
+
+     if(!fp.is_open())
+      {cout<< "Mem File not opened";
+       }
+
+     uint32_t ii = 0; 
+     // Copying the data into memArray
+     while(getline(fp, inp_line2))
+       {
+	 stringstream inp_string2(inp_line2);
+	 getline(inp_string2, parsed_line2, '\t');
+	 addr_mem = stoul(parsed_line2, NULL, 16);
+	 getline(inp_string2, parsed_line2, '\n');
+	 data_mem = stoul(parsed_line2, NULL, 16);
+	 memArray[ii]= data_mem;
+       	 ii++; 
+	 }
+  
+    string inp_line, parsed_line;
+    string command;
+    unsigned int address, data;
+    uint32_t L1_cacheSize,L1_associativity, L1_blockSize, L2_cacheSize, L2_associativity, L2_blockSize;
+ 
+ 
+    L1_cacheSize = atoi(argv[1]);
+    L1_associativity = atoi(argv[2]);
+    L1_blockSize = atoi(argv[3]);
+    L2_cacheSize = atoi(argv[4]);
+    L2_associativity = atoi(argv[5]);
+    L2_blockSize = atoi(argv[6]);
+
+    ifstream fp_inp(argv[7]); 
+    BaseCache L1(L1_cacheSize, L1_associativity, L1_blockSize);
+    BaseCache L2(L2_cacheSize, L2_associativity, L2_blockSize);
+    
+    if(fp_inp.is_open())
+      {
+         while(getline(fp_inp, inp_line)) {
+            stringstream inp_string(inp_line);
+    	    if(getline(inp_string,parsed_line, ' ')) 
+		command = parsed_line;
+	    if(getline(inp_string,parsed_line, ' ')) 
+		address = stoul(parsed_line, NULL, 16);
+	    if (!(command.compare("w"))) {
+	    	if(getline(inp_string,parsed_line, ' ')) {
+		    data = stoul(parsed_line, NULL, 16);
+		}
+	    }
+	   
+	    //Issue read/write command
+	    if (!(command.compare("w")))
+	      { 
+	        if(L1.write(address, data))
+	        { L2.write(address, data);
+		  mem_write(address, data);
+		 
+		 } 
+		else if(L2.write(address, data)) 
+		  { mem_write(address, data);
+		 
+		  }
+		else { mem_write(address, data);
+		      }
+	      }
+
+	    if (!(command.compare("r"))) { 
+	        if(L1.read(address, &data))
+		  {
+	            }
+		
+		else if(L2.read(address, &data))
+	             {
+			L1.write(address,data);
+			L1.decr_writehits();
+			L1.decr_write();
+			break;
+		       }
+		else
+		  { mem_read(address, &data);
+		    L2.write(address, data);
+		    L2.decr_writehits();
+		    L2.decr_write();
+		    L1.write(address, data);
+		    L1.decr_writehits();
+		    L1.decr_write();
+		  }
+	          }
+        }
+        fp_inp.close();
+
+   }
+   
+    AMAT = 1 + ((L1.getReadMissRate()/100))* ( 15 + 70*((L2.getReadMissRate()/100)));
+
+    
+    if ((memread_count || memwrite_count)!=0)
+      {
+	max_accesstime = 86;
+      }
+    else if(L2.getReadHits()|| L2.getWriteHits() != 0)
+      { max_accesstime = 16;
+      }
+    else{ max_accesstime = 1;}
+
+
+    if((L1.getReadHits())||(L1.getWriteHits()) !=0)
+      {
+	min_accesstime = 1;
+      }
+    else if((L2.getReadHits()||L2.getWriteHits()) !=0)
+      {
+	min_accesstime = 16; 
+      }
+    else
+      { min_accesstime = 86;
+      }
+
+
+
+    cout <<endl;
+   
+    cout << "L1 Read Hits (HitRate): "<<L1.getReadHits()<<" ("<<L1.getReadHitRate()<<"%)"<<endl;
+    cout << "L1 Read Misses (MissRate): "<<L1.getReadMisses() <<" ("<<L1.getReadMissRate()<<"%)"<<endl;
+    cout << "L1 Write Hits (HitRate): "<<L1.getWriteHits()<<" ("<<L1.getWriteHitRate()<<"%)"<<endl;
+    cout << "L1 Write Misses (MissRate): "<<L1.getWriteMisses() <<" ("<<L1.getWriteMissRate()<<"%)"<<endl;
+    cout << "L1 Overall Hit Rate: "<<L1.getOverallHitRate() <<"%" << endl;
+    cout << "L1 Overall Miss Rate: "<<L1.getOverallMissRate()<<"%"<<endl;
+ 
+    cout<<endl;
+
+    cout << "L2 Read Hits (HitRate): "<<L2.getReadHits()<<" ("<<L2.getReadHitRate()<<"%)"<<endl;
+    cout << "L2 Read Misses (MissRate): "<<L2.getReadMisses() <<" ("<<L2.getReadMissRate()<<"%)"<<endl;
+    cout << "L2 Write Hits (HitRate): "<<L2.getWriteHits()<<" ("<<L2.getWriteHitRate()<<"%)"<<endl;
+    cout << "L2 Write Misses (MissRate): "<<L2.getWriteMisses() <<" ("<<L2.getWriteMissRate()<<"%)"<<endl;
+    cout << "L2 Overall Hit Rate: "<<L2.getOverallHitRate() <<"%" << endl;
+    cout << "L2 Overall Miss Rate: "<<L2.getOverallMissRate()<<"%"<<endl;
+
+    cout<<endl;
+
+    cout<<"Average memory access time (AMAT) (Reads): "<<AMAT<<"ns"<<endl;
+    cout<<"Minimum access time: "<<min_accesstime<<"ns"<<endl;
+    cout<<"Maximum access time: "<<max_accesstime<<"ns"<<endl;
+
+   return 1;
+}
+
+
+
+/*
+**************************************************
+ mem_read(temp_address ,uint32_t *data)
+{
+  uint32_t addr_mem;
+  uint32_t addr_check = temp_address; 
+  uint32_t data_mem;
+  string inp_line2, parsed_line2;
+  
+  memread_count++; 
+
+  fstream fp_mem("memfoot.dat");
+        while(getline(fp_mem, inp_line2))
+	  {
+            stringstream inp_string2(inp_line2);
+    	    if(getline(inp_string2,parsed_line2, '\t')) 
+	      {
+		addr_mem = stoul(parsed_line2, NULL, 16);
+		if (addr_mem == addr_check)
+		  {
+		    getline(inp_string2, parsed_line2, '\n');
+		    data_mem = stoul(parsed_line2, NULL, 16);
+		    *data = data_mem;
+		    
+		  }
+	       }
+	  }
+}
+*****************************************************************
+*/
